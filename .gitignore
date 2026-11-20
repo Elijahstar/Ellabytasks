@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+projects/*/assets/
+projects/*/output/
+client_secret*.json
+youtube_token.json

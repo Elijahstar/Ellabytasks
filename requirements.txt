@@ -1,0 +1,6 @@
+anthropic>=2.11.0
+pydantic>=2.6
+requests>=2.31
+# Optional: only needed for `publish youtube`
+google-api-python-client>=2.100
+google-auth-oauthlib>=1.2
