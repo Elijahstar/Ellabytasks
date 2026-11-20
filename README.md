@@ -60,6 +60,33 @@ python -m movie_agent render nosferatu-1922
 python -m movie_agent run "Metropolis" --minutes 35
 ```
 
+### Recommending your own movies
+
+Keep a list of films you want made. The agent checks the rights for each one
+when you add it, shows your picks first (★) in `discover`, and works through
+the list in order.
+
+```bash
+python -m movie_agent recommend add "The Lost World" --year 1925 \
+    --logline "Explorers find living dinosaurs on a South American plateau" \
+    --style "stop-motion adventure, sepia tint" --minutes 35 \
+    --notes "Give the journalist character a bigger role"
+python -m movie_agent recommend add "Casablanca" --year 1942    # copyrighted → original story "inspired" by it
+
+python -m movie_agent recommend list            # status (queued / planned / skipped), mode, project
+python -m movie_agent recommend next            # Claude writes the script for the next queued film
+python -m movie_agent recommend next --render   # ...and renders the film + clips
+python -m movie_agent recommend skip "Casablanca"
+python -m movie_agent recommend remove "Casablanca"
+
+python -m movie_agent plan "The Lost World"     # no --year needed once it's recommended
+```
+
+Your picks are saved in `recommendations.json` in the folder you run the
+agent from, so you can also edit or share that file. The style, length and
+notes you give are used automatically when the script is written; anything
+you pass on the command line overrides them.
+
 ### Editing the script
 
 Every change is saved to `script.json` + a readable `script.md`, and the
@@ -153,6 +180,7 @@ request, the API retries it on a fallback model in the same call.
 ```
 movie_agent/
   catalog.py      film discovery (curated list + Wikidata)
+  recommendations.py  your own movie picks, queued for the agent
   rights.py       public-domain check → adaptation / inspired mode
   scriptwriter.py Claude: full scripts, new scenes, rewrites (structured JSON output)
   editor.py       add / remove / move / duplicate / edit scenes

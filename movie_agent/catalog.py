@@ -167,7 +167,20 @@ def search_wikidata(start: int, end: int, limit: int = 25, min_links: int = 30, 
 
 
 def find_movie(title: str, year: int | None = None) -> Movie:
-    """Look a title up in the catalog; otherwise return a bare Movie the user described."""
+    """Look a title up in your recommendations, then the catalog; otherwise return a
+    bare Movie the user described."""
+    from . import recommendations
+
+    rec = recommendations.find(recommendations.load(), title, year)
+    if rec:
+        movie = rec.to_movie()
+        for m in CATALOG:  # keep the catalog's rights info and fill in blanks
+            if m.title.lower() == rec.title.lower() and m.year == rec.year:
+                movie.rights_hint, movie.rights_note = m.rights_hint, m.rights_note
+                movie.logline = movie.logline or m.logline
+                movie.genre = movie.genre or m.genre
+                movie.director = movie.director or m.director
+        return movie
     for m in CATALOG:
         if m.title.lower() == title.lower() and (year is None or m.year == year):
             return m

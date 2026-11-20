@@ -8,6 +8,7 @@ import textwrap
 from pathlib import Path
 
 from . import catalog, editor
+from . import recommendations as recs
 from .models import Movie
 from .project import ROOT, Project, fmt_time
 from .rights import decide_mode, us_public_domain_cutoff
@@ -20,16 +21,26 @@ def cmd_discover(a: argparse.Namespace) -> None:
         movies = catalog.search_wikidata(a.start, a.end, limit=a.limit)
     else:
         movies = catalog.search_catalog(a.start, a.end, a.genre, a.pd_only, a.query)
+        mine = [r.to_movie() for r in recs.load()
+                if a.start <= r.year <= a.end and r.status == "queued"
+                and (not a.genre or a.genre.lower() in r.genre.lower())
+                and (not a.query or a.query.lower() in (r.title + " " + r.logline).lower())]
+        if a.pd_only:
+            mine = [m for m in mine if decide_mode(m)[0] == "adaptation"]
+        known = {(m.title.lower(), m.year) for m in mine}
+        movies = mine + [m for m in movies if (m.title.lower(), m.year) not in known]
     cutoff = us_public_domain_cutoff()
     print(f"{'YEAR':<6}{'TITLE':<42}{'GENRE':<20}{'AGENT MODE'}")
     for m in movies[: a.limit]:
         mode, _ = decide_mode(m)
         flag = mode + (" (verify PD)" if m.rights_hint == "verify" and m.year > cutoff else "")
-        print(f"{m.year:<6}{m.title[:40]:<42}{m.genre[:18]:<20}{flag}")
+        star = "★ " if m.source == "your recommendation" else ""
+        print(f"{m.year:<6}{(star + m.title)[:40]:<42}{m.genre[:18]:<20}{flag}")
         if m.logline and a.verbose:
             print(textwrap.indent(textwrap.fill(m.logline, 80), "      "))
     print(f"\n{len(movies[: a.limit])} films. US public domain cutoff today: released in or before {cutoff}.")
     print("adaptation = retell the film; inspired = original story in the same spirit.")
+    print("★ = your recommendation (add more with `recommend add`).")
 
 
 # ---------------------------------------------------------------- plan ----
@@ -45,6 +56,12 @@ def cmd_plan(a: argparse.Namespace) -> Project:
     from .scriptwriter import write_script
 
     movie = _movie_from_args(a)
+    rec = recs.find(recs.load(), movie.title, movie.year)
+    if rec:  # your recommendation's settings fill in anything not given on the command line
+        a.minutes = a.minutes or rec.minutes
+        a.style = a.style or rec.style
+        a.notes = a.notes or rec.notes
+    a.minutes = a.minutes or 40
     mode, statement = decide_mode(movie)
     if a.mode == "inspired":
         mode, statement = "inspired", statement + " Producer chose inspired mode."
@@ -55,6 +72,8 @@ def cmd_plan(a: argparse.Namespace) -> Project:
     print(f"Writing a {a.minutes}-minute {mode} script with Claude (this can take a few minutes)...")
     script = write_script(movie, mode, statement, a.minutes, a.style or "", a.notes or "")
     proj = Project.create(script, a.name)
+    if rec:
+        recs.mark(rec.title, rec.year, "planned", proj.path.name)
     print(f"\nProject created: {proj.path}")
     print(f"  {len(script.scenes)} scenes, runtime {fmt_time(script.total_seconds())}")
     print(f"  Read the script: {proj.path / 'script.md'}")
@@ -210,6 +229,55 @@ def cmd_publish(a: argparse.Namespace) -> None:
         print("\n(dry run — add --go to really post)")
 
 
+# ----------------------------------------------------------- recommend ----
+
+def cmd_recommend(a: argparse.Namespace) -> None:
+    if a.action == "add":
+        if not 1888 <= a.year <= 2000:
+            print(f"Note: {a.year} is outside 1888-2000; adding it anyway.")
+        r = recs.add(recs.Recommendation(
+            title=a.title, year=a.year, logline=a.logline or "", genre=a.genre or "",
+            director=a.director or "", notes=a.notes or "", style=a.style or "",
+            minutes=a.minutes or 40,
+        ))
+        mode, statement = decide_mode(catalog.find_movie(r.title, r.year))
+        print(f"Added '{r.title}' ({r.year}) to your recommendations.")
+        print(f"Rights check: {statement}")
+        if not r.logline:
+            print("Tip: add --logline to describe the film; it helps with lesser-known titles.")
+    elif a.action == "list":
+        items = recs.load()
+        if not items:
+            print("No recommendations yet. Add one: recommend add \"Title\" --year 1925")
+            return
+        print(f"{'STATUS':<9}{'YEAR':<6}{'TITLE':<38}{'MIN':<5}{'MODE':<12}PROJECT")
+        for r in items:
+            mode, _ = decide_mode(catalog.find_movie(r.title, r.year))
+            print(f"{r.status:<9}{r.year:<6}{r.title[:36]:<38}{r.minutes:<5}{mode:<12}{r.project}")
+    elif a.action == "remove":
+        r = recs.remove(a.title)
+        print(f"Removed '{r.title}' ({r.year}).")
+    elif a.action == "skip":
+        r = recs.find(recs.load(), a.title)
+        if not r:
+            raise KeyError(f"'{a.title}' is not in your recommendations.")
+        recs.mark(r.title, r.year, "skipped")
+        print(f"Skipped '{r.title}'.")
+    elif a.action == "next":
+        r = recs.next_queued()
+        if not r:
+            print("Nothing queued. Add films with `recommend add`.")
+            return
+        print(f"Next up: {r.title} ({r.year})")
+        a.title, a.year, a.logline = r.title, r.year, None
+        a.minutes = a.style = a.notes = a.name = None
+        a.mode = "auto"
+        if a.render:
+            cmd_run(a)
+        else:
+            cmd_plan(a)
+
+
 # ----------------------------------------------------------------- run ----
 
 def cmd_run(a: argparse.Namespace) -> None:
@@ -241,7 +309,8 @@ def build_parser() -> argparse.ArgumentParser:
     def plan_args(sp: argparse.ArgumentParser) -> None:
         sp.add_argument("title")
         sp.add_argument("--year", type=int)
-        sp.add_argument("--minutes", type=int, default=40, choices=range(30, 46), metavar="30-45")
+        sp.add_argument("--minutes", type=int, choices=range(30, 46), metavar="30-45",
+                        help="Target length (default 40, or your recommendation's setting)")
         sp.add_argument("--style", help="e.g. 'hand-tinted silent film', 'Pixar-like 3D', 'anime'")
         sp.add_argument("--notes", help="Anything extra the writer should know")
         sp.add_argument("--logline", help="Describe the film if it's not in the catalog")
@@ -296,6 +365,23 @@ def build_parser() -> argparse.ArgumentParser:
     pb.add_argument("--url-template", help="Instagram: public URL pattern for clips, with {name}")
     pb.add_argument("--go", action="store_true")
     pb.set_defaults(func=cmd_publish)
+
+    rc = sub.add_parser("recommend", help="Your own movie recommendations for the agent")
+    rcs = rc.add_subparsers(dest="action", required=True)
+    x = rcs.add_parser("add", help="Recommend a film")
+    x.add_argument("title"); x.add_argument("--year", type=int, required=True)
+    x.add_argument("--logline", help="One line on what the film is about")
+    x.add_argument("--genre"); x.add_argument("--director")
+    x.add_argument("--notes", help="Instructions for the scriptwriter, e.g. 'focus on the heroine'")
+    x.add_argument("--style", help="Visual style for this film")
+    x.add_argument("--minutes", type=int, choices=range(30, 46), metavar="30-45")
+    rcs.add_parser("list", help="Show your recommendations")
+    x = rcs.add_parser("remove"); x.add_argument("title")
+    x = rcs.add_parser("skip", help="Keep it in the list but don't make it"); x.add_argument("title")
+    x = rcs.add_parser("next", help="Write the script for the next queued recommendation")
+    x.add_argument("--render", action="store_true", help="Also render the film and clips")
+    render_args(x)
+    rc.set_defaults(func=cmd_recommend)
 
     rn = sub.add_parser("run", help="Full automation: plan + render + clips")
     plan_args(rn); render_args(rn)

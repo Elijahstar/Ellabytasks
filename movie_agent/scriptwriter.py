@@ -53,6 +53,25 @@ def _client() -> anthropic.Anthropic:
 
 def _call(prompt: str, schema: type[T], max_tokens: int = 64000) -> T:
     """Stream a structured-output request and return the validated object."""
+    try:
+        return _call_api(prompt, schema, max_tokens)
+    except TypeError as e:
+        if "authentication" in str(e):
+            raise RuntimeError(
+                "No Anthropic credentials. Set ANTHROPIC_API_KEY (get one at console.anthropic.com)."
+            ) from e
+        raise
+    except anthropic.AuthenticationError as e:
+        raise RuntimeError("Your ANTHROPIC_API_KEY was rejected. Check that it is correct.") from e
+    except anthropic.RateLimitError as e:
+        raise RuntimeError("Rate limited by the Claude API. Wait a minute and try again.") from e
+    except anthropic.APIStatusError as e:
+        raise RuntimeError(f"Claude API error {e.status_code}: {e.message}") from e
+    except anthropic.APIConnectionError as e:
+        raise RuntimeError("Could not reach the Claude API. Check your internet connection.") from e
+
+
+def _call_api(prompt: str, schema: type[T], max_tokens: int) -> T:
     with _client().beta.messages.stream(
         model=MODEL,
         max_tokens=max_tokens,
