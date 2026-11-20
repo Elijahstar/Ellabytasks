@@ -172,12 +172,14 @@ def cmd_render(a: argparse.Namespace) -> None:
         if only and sc.id.lower() not in only:
             continue
         print(f"[{n}/{len(script.scenes)}] {sc.id} {sc.title}")
-        clips.append(render.render_scene(proj, script, sc, a.video, a.voice, a.force))
+        clips.append(render.render_scene(proj, script, sc, a.video, a.voice, a.force, a.images))
     if only:
         print("Rendered selected scenes. Run without --only to assemble the full film.")
         return
     out = render.assemble(proj, script, clips)
     print(f"\nFull film: {out['full']}\nSubtitles: {out['srt']}")
+    if out["credits"].read_text().strip():
+        print(f"Image credits: {out['credits']} (the ones that legally need credit are added to the YouTube description)")
     if not a.no_clips:
         made = render.make_vertical_clips(proj, script, a.clip_seconds)
         print(f"Vertical clips: {len(made)} in {proj.output_dir / 'clips'}")
@@ -345,8 +347,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_script)
 
     def render_args(sp: argparse.ArgumentParser) -> None:
-        sp.add_argument("--video", choices=["preview", "command"], default="preview")
-        sp.add_argument("--voice", choices=["silent", "espeak", "command"], default="silent")
+        sp.add_argument("--video", choices=["pictures", "preview", "command"], default="pictures",
+                        help="pictures = free stills with zoom/pan (default); preview = title cards; "
+                             "command = your AI video script")
+        sp.add_argument("--images", choices=["commons", "command"], default="commons",
+                        help="Where pictures come from: commons = free Wikimedia Commons images (default); "
+                             "command = your own image generator via MOVIE_AGENT_IMAGE_CMD")
+        sp.add_argument("--voice", choices=["piper", "silent", "espeak", "command"], default="piper",
+                        help="piper = free natural voice on your computer (default)")
         sp.add_argument("--clip-seconds", type=int, default=90)
 
     r = sub.add_parser("render", help="Render scenes and assemble the film + clips")

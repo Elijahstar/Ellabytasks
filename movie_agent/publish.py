@@ -48,7 +48,16 @@ def upload_youtube(
     desc = script.social.youtube_description
     if chapters and chapters.exists():
         desc += "\n\nChapters:\n" + chapters.read_text()
-    desc += "\n\nThis video was created with AI tools."
+    credits = video.parent / "image_credits_required.txt"
+    credit_text = credits.read_text().strip() if credits.exists() else ""
+    footer = "\n\nThis video was created with AI tools."
+    if credit_text and len(desc) + len(credit_text) + len(footer) + 2 <= 5000:
+        desc += "\n\n" + credit_text
+    elif credit_text:
+        desc += "\n\nImage credits: see the pinned comment."
+        print(f"  ! The image credits don't fit in YouTube's 5000-character description.\n"
+              f"    Post the text of {credits} as a comment and pin it after the upload.")
+    desc += footer
     body = {
         "snippet": {
             "title": script.social.youtube_title[:100],

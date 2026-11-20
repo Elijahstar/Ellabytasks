@@ -3,9 +3,14 @@
 ## Classic Movie → AI Film Agent
 
 An agent that finds interesting films from cinema's first century (1888–2000),
-has Claude write a **30–45 minute** script for an AI-generated retelling, lets
+has Claude write a **30–45 minute** script for a narrated retelling, lets
 you **add, remove, move and rewrite scenes**, renders the film, and cuts
 vertical clips for **YouTube, Instagram Reels and TikTok**.
+
+By default the film is a **picture video**: free public-domain photos,
+paintings and film stills with slow zoom and pan, narrated by a free voice
+that runs on your computer. The only paid part is Claude writing the script
+(roughly $0.50–$1.50 per film).
 
 ```
 discover ─► plan (Claude writes script) ─► edit script ─► render ─► clips ─► publish
@@ -116,9 +121,32 @@ python -m movie_agent script undo    $P
 re-estimated automatically when you change narration or dialogue.
 You can also edit `script.json` by hand.
 
-### Rendering
+### Rendering (free picture video)
 
-`render` creates one clip per scene in `assets/scenes/`, then:
+```bash
+python -m movie_agent render nosferatu-1922
+```
+
+For each scene the agent:
+1. searches **Wikimedia Commons** with the scene's `image_search` words (written by
+   Claude, editable with `script edit P S04 --field image_search --value "..."`)
+   and downloads about one picture per 8 seconds of the scene. Only images that are
+   public domain, CC0 or CC BY are used;
+2. gives every picture a slow zoom or pan with soft fades (pictures of any
+   shape are fitted over a blurred copy of themselves);
+3. reads the narration with **Piper**, a free natural-sounding voice. The voice
+   (~60 MB) downloads automatically the first time.
+
+If no suitable picture is found for a scene, it gets a title card instead and
+the agent tells you, so you can change that scene's search words.
+
+**Image credits:** CC BY images must be credited. The agent saves
+`output/image_credits.txt` (every image used) and `image_credits_required.txt`
+(the CC BY ones), and `publish youtube` adds the required credits to the
+description. If a CC BY image appears in a TikTok/Reels clip, add its credit to
+that post's caption too.
+
+Then it creates:
 
 - `output/full_movie.mp4`: the 16:9 1080p film for YouTube
 - `output/full_movie.srt`: subtitles
@@ -127,12 +155,18 @@ You can also edit `script.json` by hand.
 
 Scenes you haven't changed are not re-rendered, so editing one scene is cheap.
 
-**Video providers**
+**Options**
 
-| `--video` | What it does |
+| Option | Choices |
 |---|---|
-| `preview` (default) | Free offline title cards showing each scene's narration, to check timing and flow before paying for generation |
-| `command` | Runs `MOVIE_AGENT_VIDEO_CMD` per scene so you can plug in **any** AI video service |
+| `--video` | `pictures` (default, free) · `preview` (instant title cards, for checking timing) · `command` (your own AI video service, see below) |
+| `--images` | `commons` (default, free Wikimedia pictures) · `command` (your own image generator via `MOVIE_AGENT_IMAGE_CMD`, e.g. a free local Stable Diffusion; placeholders `{prompt_file} {out} {scene_id} {index}`) |
+| `--voice` | `piper` (default, free) · `silent` · `espeak` (free, robotic) · `command` (any TTS service via `MOVIE_AGENT_TTS_CMD`) |
+
+Change the narrator with `MOVIE_AGENT_PIPER_VOICE`, e.g. `en_GB-alan-medium`
+(voice list: https://huggingface.co/rhasspy/piper-voices).
+
+**Optional: real AI video (paid)**
 
 ```bash
 export MOVIE_AGENT_VIDEO_CMD='python providers/video_provider_template.py --prompt-file {prompt_file} --seconds {duration} --out {out}'
@@ -142,11 +176,7 @@ python -m movie_agent render nosferatu-1922 --video command --voice command
 Fill in `providers/video_provider_template.py` with the SDK of the service you
 choose. Placeholders: `{prompt_file} {out} {duration} {width} {height} {scene_id}`.
 
-**Voice providers** (`--voice`): `silent`, `espeak` (free, robotic; needs
-`espeak-ng`), or `command` via `MOVIE_AGENT_TTS_CMD` (placeholders
-`{text_file} {out} {scene_id}`), e.g. a script calling your favourite TTS service.
-
-Use `--only S03,S04` to try generation on a few scenes before rendering everything.
+Use `--only S03,S04` to render a few scenes first and check how they look.
 
 ### Publishing (dry run unless you add `--go`)
 
@@ -171,6 +201,8 @@ each pointing viewers to the full film.
 |---|---|---|
 | `MOVIE_AGENT_MODEL` | `claude-opus-5-5` | Claude model for writing |
 | `MOVIE_AGENT_EFFORT` | `high` | `low`/`medium`/`high`/`xhigh`/`max` |
+| `MOVIE_AGENT_PIPER_VOICE` | `en_US-lessac-medium` | Narrator voice |
+| `MOVIE_AGENT_USER_AGENT` | generic | Name sent to Wikimedia; adding your channel or email is polite |
 
 Script requests use automatic server-side fallback: if Claude declines a
 request, the API retries it on a fallback model in the same call.
@@ -185,7 +217,8 @@ movie_agent/
   scriptwriter.py Claude: full scripts, new scenes, rewrites (structured JSON output)
   editor.py       add / remove / move / duplicate / edit scenes
   project.py      project folders, history & undo, Markdown export
-  render.py       per-scene rendering, assembly, subtitles, vertical clips
+  images.py       free pictures from Wikimedia Commons (or your own generator) + credits
+  render.py       zoom/pan picture video, voice, assembly, subtitles, vertical clips
   publish.py      YouTube / Instagram / TikTok uploads
   cli.py          command line
 providers/        template for plugging in an AI video service

@@ -34,6 +34,12 @@ Writing rules:
   of breathing room). Scenes run 20-90 seconds.
 - Open with a strong hook in the first 30 seconds, build in three acts, and end
   with a satisfying close and a call to subscribe.
+- The film is made from still pictures with slow zoom and pan, so give each
+  scene an image_search query that will find real public-domain photos,
+  paintings or film stills on Wikimedia Commons. In "adaptation" mode, include
+  the film's title and year to find its stills when the scene shows a moment
+  from the film. In "inspired" mode, never use the source film's title; search
+  for era subjects instead (e.g. "1940s Morocco street", "vintage airport fog").
 - Mark 5-10 of the most gripping, self-contained moments with social_hook=true.
 - Scene ids are S01, S02, ... in order.
 

@@ -39,6 +39,12 @@ class Scene(BaseModel):
         description="Detailed prompt for an AI video model: subject, setting, era, "
         "lighting, camera movement, style. No real actor names."
     )
+    image_search: str = Field(
+        default="",
+        description="2-6 word search query for free archival pictures on Wikimedia Commons "
+        "(photos, paintings, film stills) that fit this scene, e.g. 'Nosferatu 1922 Orlok' or "
+        "'1920s steam locomotive night'.",
+    )
     camera: str = Field(default="", description="Shot type and movement.")
     music_mood: str = Field(default="", description="Music / sound design mood.")
     duration_sec: int = Field(description="Target on-screen length in seconds (20-90).")
